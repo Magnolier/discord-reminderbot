@@ -1065,21 +1065,30 @@ class ReminderCog(commands.Cog):
         if repeat_interval == '月末':
             return remind_datetime + relativedelta(months=+1, day=99)
 
-        # 土曜日の毎時刻(例: 土@09:30,59:55 は毎時09分30秒と59分55秒)
+        # 金曜23:59:55に1回、土曜は毎時09:30と59:55(ただし23:59:55を除く)
+        # repeat_intervalの例: 土@09:30,59:55
         hourly_match = re.fullmatch(r'土@((?:[0-5][0-9]:[0-5][0-9])(?:,[0-5][0-9]:[0-5][0-9])*)', repeat_interval)
         if hourly_match:
             minute_seconds = sorted(tuple(map(int, value.split(':'))) for value in hourly_match.group(1).split(','))
             for day_offset in range(8):
                 candidate_day = remind_datetime.date() + datetime.timedelta(days=day_offset)
-                if candidate_day.weekday() != 5:
+                if candidate_day.weekday() == 4:
+                    candidates = [(23, 59, 55)]
+                elif candidate_day.weekday() == 5:
+                    candidates = [
+                        (hour, minute, second)
+                        for hour in range(24)
+                        for minute, second in minute_seconds
+                        if not (hour == 23 and minute == 59 and second == 55)
+                    ]
+                else:
                     continue
-                for hour in range(24):
-                    for minute, second in minute_seconds:
-                        candidate = remind_datetime.replace(
-                            year=candidate_day.year, month=candidate_day.month, day=candidate_day.day,
-                            hour=hour, minute=minute, second=second, microsecond=0)
-                        if candidate > remind_datetime:
-                            return candidate
+                for hour, minute, second in candidates:
+                    candidate = remind_datetime.replace(
+                        year=candidate_day.year, month=candidate_day.month, day=candidate_day.day,
+                        hour=hour, minute=minute, second=second, microsecond=0)
+                    if candidate > remind_datetime:
+                        return candidate
             return None
 
         # 平日, 休日, 曜日(月火水木金土日)
