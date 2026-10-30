@@ -212,6 +212,24 @@ class Remind:
 
             LOG.debug('set_discord_attachment_file is over!')
 
+    async def save_discord_attachment_file_safely(self, guild):
+        """Persist the database snapshot without interrupting reminder processing."""
+        try:
+            await self.set_discord_attachment_file(guild)
+            return
+        except Exception:
+            guild_name = getattr(guild, 'name', str(guild))
+            LOG.exception(f'{guild_name}への添付ファイル保存に失敗しました。dm_guildへの保存を試みます')
+
+        fallback_guild = discord.utils.get(self.bot.guilds, id=self.saved_dm_guild)
+        if fallback_guild is None or fallback_guild == guild:
+            LOG.error('添付ファイル保存先のフォールバック先がありません。')
+            return
+        try:
+            await self.set_discord_attachment_file(fallback_guild)
+        except Exception:
+            LOG.exception(f'{fallback_guild.name}への添付ファイル保存にも失敗しました。リマインド処理は継続します')
+
     def decode(self):
         if os.path.exists(self.aes.ENC_FILE_PATH):
             self.aes.decode()
@@ -274,15 +292,7 @@ class Remind:
             guild = discord.utils.get(self.bot.guilds, id=self.saved_dm_guild)
         else:
             guild = discord.utils.get(self.bot.guilds, id=guild_id)
-
-        # Herokuの時のみ、チャンネルにファイルを添付する
-        try:
-            await self.set_discord_attachment_file(guild)
-        except discord.errors.Forbidden:
-            msg = f'＊＊＊{guild.name}へのチャンネル作成に失敗したため、dm_guildへ添付します＊＊＊'
-            LOG.info(msg)
-            guild = discord.utils.get(self.bot.guilds, id=self.saved_dm_guild)
-            await self.set_discord_attachment_file(guild)
+        await self.save_discord_attachment_file_safely(guild)
 
         return id
 
@@ -310,15 +320,7 @@ class Remind:
             guild = discord.utils.get(self.bot.guilds, id=self.saved_dm_guild)
         else:
             guild = discord.utils.get(self.bot.guilds, id=guild_id)
-
-        # Herokuの時のみ、チャンネルにファイルを添付する
-        try:
-            await self.set_discord_attachment_file(guild)
-        except discord.errors.Forbidden:
-            msg = f'＊＊＊{guild.name}へのチャンネル作成に失敗したため、dm_guildへ添付します＊＊＊'
-            LOG.info(msg)
-            guild = discord.utils.get(self.bot.guilds, id=self.saved_dm_guild)
-            await self.set_discord_attachment_file(guild)
+        await self.save_discord_attachment_file_safely(guild)
 
     def check_deleted_member(self, user_id: int, guild_id: int = None, guild_flg: bool = False):
         '''BANをチェック的なかんじ'''
