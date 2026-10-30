@@ -50,7 +50,6 @@ class ReminderCog(commands.Cog):
         self.make_send_printer.start()
         self.send_printer.start()
         self.update_printer.start()
-
     def cog_unload(self):
         self.make_send_printer.cancel()
         self.send_printer.cancel()
@@ -279,7 +278,7 @@ class ReminderCog(commands.Cog):
                     LOG.error(f'返信なし(no_reply): {next_remind_datetime}->{reply_msg}')
             self.db_queue.task_done()
 
-    @tasks.loop(seconds=10.0)
+    @tasks.loop(seconds=1.0)
     async def make_send_printer(self):
         now = datetime.datetime.now(self.JST)
         LOG.info(f'make_send_printer is kicked.({now})')
@@ -313,7 +312,7 @@ class ReminderCog(commands.Cog):
         self.before_time = end
         LOG.info(f'make_send_printer is end.({end} / send_queue:{self.send_queue.qsize()} / db_queue:{self.db_queue.qsize()})')
 
-    @tasks.loop(seconds=15.0)
+    @tasks.loop(seconds=1.0)
     async def send_printer(self):
         now = datetime.datetime.now(self.JST)
 
@@ -352,7 +351,7 @@ class ReminderCog(commands.Cog):
     @app_commands.describe(
         message='メッセージ(<br>か@@@などで改行。メンションは通常のメッセージのように @xxxx と書く。@silentでこっそり)')
     @app_commands.describe(
-        repeat_interval='繰り返し間隔(数字+英字を付与：分(mi)/時間(h)/日(d)/週(w)/月(m)/年(y)か、特殊(平日/休日/月初/月末/曜日文字列(「月水」など)))')
+        repeat_interval='繰り返し間隔(数字+英字を付与：分(mi)/時間(h)/日(d)/週(w)/月(m)/年(y)か、特殊(平日/休日/月初/月末/曜日文字列(「月水」など)、毎時刻(「土@09:30,59:55」)))')
     @app_commands.describe(
         repeat_max_count='繰り返し最大数(設定がない場合、ずっと繰り返されます)')
     @app_commands.describe(
@@ -1066,6 +1065,23 @@ class ReminderCog(commands.Cog):
         if repeat_interval == '月末':
             return remind_datetime + relativedelta(months=+1, day=99)
 
+        # 土曜日の毎時刻(例: 土@09:30,59:55 は毎時09分30秒と59分55秒)
+        hourly_match = re.fullmatch(r'土@((?:[0-5][0-9]:[0-5][0-9])(?:,[0-5][0-9]:[0-5][0-9])*)', repeat_interval)
+        if hourly_match:
+            minute_seconds = sorted(tuple(map(int, value.split(':'))) for value in hourly_match.group(1).split(','))
+            for day_offset in range(8):
+                candidate_day = remind_datetime.date() + datetime.timedelta(days=day_offset)
+                if candidate_day.weekday() != 5:
+                    continue
+                for hour in range(24):
+                    for minute, second in minute_seconds:
+                        candidate = remind_datetime.replace(
+                            year=candidate_day.year, month=candidate_day.month, day=candidate_day.day,
+                            hour=hour, minute=minute, second=second, microsecond=0)
+                        if candidate > remind_datetime:
+                            return candidate
+            return None
+
         # 平日, 休日, 曜日(月火水木金土日)
         start = remind_datetime + relativedelta(days=+1)
         end = remind_datetime + relativedelta(weeks=+1)
@@ -1185,15 +1201,15 @@ class ReminderCog(commands.Cog):
             base_time = datetime.datetime.now(self.JST)
         m_hours = re.match('^([0-9]{1,3})h$', time)
         m_minutes = re.match('^([0-9]{1,4})mi$', time)
-        m_normal = re.match('^([0-9]{1,2}:[0-9]{1,2})$', time)
+        m_normal = re.match('^([0-9]{1,2}:[0-9]{1,2}(?::[0-9]{1,2})?)$', time)
         if time == '0':
-            time = base_time.strftime('%H:%M')
+            time = base_time.strftime('%H:%M:%S')
         elif m_hours:
             result_time = base_time + datetime.timedelta(hours=int(m_hours.group(1)))
-            time = result_time.strftime('%H:%M')
+            time = result_time.strftime('%H:%M:%S')
         elif m_minutes:
             result_time = base_time + datetime.timedelta(minutes=int(m_minutes.group(1)))
-            time = result_time.strftime('%H:%M')
+            time = result_time.strftime('%H:%M:%S')
         elif m_normal:
             pass
         else:

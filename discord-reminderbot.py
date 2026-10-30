@@ -3,6 +3,7 @@ from discord.ext import commands
 from logging import basicConfig, getLogger, StreamHandler, FileHandler, Formatter, NOTSET
 from datetime import timedelta, timezone
 import discord, os, datetime, asyncio
+from aiohttp import web
 
 # 時間
 JST = timezone(timedelta(hours=9), 'JST')
@@ -63,11 +64,26 @@ class DiscordReminderBot(commands.Bot):
         LOG.info('We have logged in as {0.user}'.format(self))
         LOG.info(f"### guilds ### \n{self.guilds}")
 
+async def health(request):
+    if not bot.is_ready():
+        return web.Response(status=503, text='bot is starting')
+    return web.Response(text='ok')
+
 async def main():
-    # Botの起動
-    async with bot:
-        await bot.start(settings.DISCORD_TOKEN)
-        LOG.info('We have logged in as {0}'.format(bot.user))
+    # RenderのHTTP監視用にポートを開きつつ、Botを起動する
+    app = web.Application()
+    app.router.add_get('/health', health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', int(os.environ.get('PORT', '10000')))
+    await site.start()
+
+    try:
+        async with bot:
+            await bot.start(settings.DISCORD_TOKEN)
+            LOG.info('We have logged in as {0}'.format(bot.user))
+    finally:
+        await runner.cleanup()
 
 # discord-reminderbotのインスタンス化、および、起動処理
 if __name__ == '__main__':

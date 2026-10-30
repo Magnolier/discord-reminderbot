@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: discord-reminderbot
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: APPLICATION_ID
+        sync: false
+      - key: ENABLE_SLASH_COMMAND_GUILD_ID
+        sync: false
+      - key: IS_HEROKU
+        value: "TRUE"
+      - key: RESTRICT_ATTACHMENT_FILE
+        value: "TRUE"
+      - key: KEEP_DECRYPTED_FILE
+        value: "FALSE"
+      - key: LOG_LEVEL
+        value: INFO
